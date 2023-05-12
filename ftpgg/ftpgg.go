@@ -2,9 +2,11 @@ package ftpgg
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -79,6 +81,85 @@ func (f *FTP) enterPassiveMode() (string, error) {
 	rgx := regexp.MustCompile("[0-9]+")
 
 	return rgx.FindString(resp), nil
+}
+
+func (f *FTP) Download(fname string) ([]byte, error) {
+
+	_, err := f.conn.Write([]byte("TYPE I\r\n"))
+
+	if err != nil {
+		return nil, err
+	}	
+
+	n, err := f.conn.Read(f.controlBuf)
+
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println(string(f.controlBuf[:n]))
+
+	_, err = f.conn.Write([]byte(fmt.Sprintf("SIZE %s\r\n", fname)))
+
+	if err != nil {
+		return nil, err
+	}
+
+	n, err = f.conn.Read(f.controlBuf)
+
+	if err != nil {
+		return nil, err
+	}
+
+	
+
+	fsize, err := strconv.Atoi(string(f.controlBuf[4:n-2]))
+
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Printf("%d size in bytes", fsize)
+
+	port, err := f.enterPassiveMode()
+
+	if err != nil {
+		return nil, err
+	}
+
+	dataConn, err := net.Dial("tcp", f.addr+port) 
+
+	if err != nil {
+		return nil, err
+	}
+
+	defer dataConn.Close()
+
+	filebuf := make([]byte, fsize)
+
+	_, err = f.conn.Write([]byte(fmt.Sprintf("RETR %s\r\n", fname)))
+
+	if err != nil {
+		return nil, err
+	}
+
+	n, err  = f.conn.Read(f.controlBuf)
+
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println(string(f.controlBuf[:n]))	
+
+	nb, err := dataConn.Read(filebuf) 
+		
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println(string(f.controlBuf[:n]))
+
+	return filebuf[:nb], nil
 }
 
 func (f *FTP) Pwd() (string, error) {

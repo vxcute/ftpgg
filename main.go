@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"goftp/ftpgg"
+	"io"
 	"log"
+	"os"
 )
 
 func main() {	
@@ -43,4 +46,22 @@ func main() {
 	}
 
 	fmt.Println(pwd)
+
+	file, err := ftp.Download("file.txt")
+	
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	f, err := os.Create("file.txt") 
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	defer f.Close()
+
+	if _, err := io.Copy(f, bytes.NewReader(file)); err != nil {
+		log.Fatal(err)
+	}
 }
