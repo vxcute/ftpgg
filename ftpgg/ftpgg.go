@@ -2,7 +2,7 @@ package ftpgg
 
 import (
 	"errors"
-	"fmt"
+	"io"
 	"net"
 	"regexp"
 	"strings"
@@ -120,22 +120,11 @@ func (f *FTP) List() ([]string, error) {
 		return nil, err
 	}
 
-	n, err := f.conn.Read(f.controlBuf)
+	_, err = io.CopyN(io.Discard, f.conn, 63)
 
 	if err != nil {
 		return nil, err
 	}
-
-	fmt.Println(string(f.controlBuf[:n-2]))
-
-	n, err = f.conn.Read(f.controlBuf)
-
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Println(string(f.controlBuf[:n-2]))
-
 
 	dirs := make(chan string, 1)
 
