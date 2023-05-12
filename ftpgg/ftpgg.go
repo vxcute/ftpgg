@@ -81,6 +81,23 @@ func (f *FTP) enterPassiveMode() (string, error) {
 	return rgx.FindString(resp), nil
 }
 
+func (f *FTP) Pwd() (string, error) {
+
+	_, err := f.conn.Write(Pwd)
+
+	if err != nil {
+		return "", err
+	}
+
+	n, err := f.conn.Read(f.controlBuf)
+
+	if err != nil {
+		return "", err
+	}
+
+	return string(f.controlBuf[:n-2]), nil
+}
+
 func (f *FTP) List() ([]string, error) {
 
 	port, err := f.enterPassiveMode()
@@ -88,8 +105,6 @@ func (f *FTP) List() ([]string, error) {
 	if err != nil  {
 		return nil, err
 	}
-
-	fmt.Println("port: ", port)
 
 	dataConn, err := net.Dial("tcp", f.addr+port)
 
@@ -105,7 +120,26 @@ func (f *FTP) List() ([]string, error) {
 		return nil, err
 	}
 
+	n, err := f.conn.Read(f.controlBuf)
+
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println(string(f.controlBuf[:n-2]))
+
+	n, err = f.conn.Read(f.controlBuf)
+
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Println(string(f.controlBuf[:n-2]))
+
+
 	dirs := make(chan string, 1)
+
+	defer close(dirs)
 
 	go func() {
 
@@ -125,7 +159,6 @@ func (f *FTP) List() ([]string, error) {
 	}()
 
 	for d := range dirs {
-		close(dirs)
 		return strings.Split(d, "\r\n"), nil
 	}
 

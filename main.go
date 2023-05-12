@@ -10,9 +10,21 @@ func main() {
 
 	ftp := ftpgg.NewFTP(":")
 
-	fmt.Println(ftp.Connect())
+	r, err := ftp.Connect()
 
-	fmt.Println(ftp.Login(ftpgg.FTPLogin{Username: "ftpuser", Password: "pass"}))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(r)
+	
+	r, err = ftp.Login(ftpgg.FTPLogin{Username: "ftpuser", Password: "pass"})
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(r)
 
 	dirs, err := ftp.List()
 
@@ -23,4 +35,12 @@ func main() {
 	for _, d := range dirs {
 		fmt.Println(d)
 	}
+
+	pwd, err := ftp.Pwd() 
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println(pwd)
 }
