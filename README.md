@@ -1,0 +1,2 @@
+# ftpgg
+simple ftp client golang package that I am writing to learn about ftp, I am mainly wiresharking and writing code we don't need the RFC (well at least for now maybe I will need later and will try to write a server too :D)
