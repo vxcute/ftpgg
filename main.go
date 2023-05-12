@@ -48,7 +48,7 @@ func main() {
 	fmt.Println(pwd)
 
 	file, err := ftp.Download("file.txt")
-	
+
 	if err != nil {
 		log.Fatal(err)
 	}

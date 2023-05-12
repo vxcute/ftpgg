@@ -111,15 +111,11 @@ func (f *FTP) Download(fname string) ([]byte, error) {
 		return nil, err
 	}
 
-	
-
 	fsize, err := strconv.Atoi(string(f.controlBuf[4:n-2]))
 
 	if err != nil {
 		return nil, err
 	}
-
-	fmt.Printf("%d size in bytes", fsize)
 
 	port, err := f.enterPassiveMode()
 
@@ -153,6 +149,12 @@ func (f *FTP) Download(fname string) ([]byte, error) {
 
 	nb, err := dataConn.Read(filebuf) 
 		
+	if err != nil {
+		return nil, err
+	}
+
+	n, err = f.conn.Read(f.controlBuf)
+
 	if err != nil {
 		return nil, err
 	}
