@@ -1,7 +1,6 @@
 package ftpgg
 
 import (
-	"fmt"
 	"io"
 	"net/textproto"
 	"regexp"
@@ -30,20 +29,11 @@ const (
 	FileTransferComplete		 = 226
 )
 
-type EntryType int
-
 const ( 
 	RegularFile EntryType = iota
 	Directory 
 	Link
 )
-
-type Entry struct {
-	Type		EntryType
-	Name 		string
-	Date 		time.Time
-	Permissions string
-}
 
 const ( 
 	List 		= "LIST"
@@ -53,6 +43,8 @@ const (
 	Size 		= "SIZE %s"
 	Retr 		= "RETR %s"
 )
+
+type EntryType int
 
 type FTP struct {
 	serverName string
@@ -64,6 +56,13 @@ type FTP struct {
 type FTPLogin struct {
 	Username string
 	Password string
+}
+
+type Entry struct {
+	Type		EntryType
+	Name 		string
+	Date 		time.Time
+	Permissions string
 }
 
 func NewFTP(addr string) *FTP {
@@ -106,8 +105,6 @@ func (f *FTP) Connect() error {
 
 	f.serverName = msg
 
-	fmt.Println(msg)
-
 	return nil
 }
 
@@ -126,9 +123,7 @@ func (f *FTP) enterPassiveMode() (string, error) {
 
 func (f *FTP) Download(fname string) ([]byte, error) {
 
-	code, msg, err := f.Cmd(SwitchingToBinaryMode, BinaryType)
-
-	fmt.Println(code, msg)
+	_, _, err := f.Cmd(SwitchingToBinaryMode, BinaryType)
 
 	if err != nil {
 		return nil, err
@@ -187,8 +182,6 @@ func (f *FTP) Pwd() (string, error) {
 
 func (f *FTP) List() ([]Entry, error) {
 
-	var err error 
-
 	port, err := f.enterPassiveMode()
 
 	if err != nil  {
@@ -204,10 +197,6 @@ func (f *FTP) List() ([]Entry, error) {
 	defer f.dataConn.Close()
 
 	_, _, err = f.Cmd(HereComesTheDirectoryListing, List)
-
-	if err != nil {
-		return nil, err
-	}
 
 	if err != nil {
 		return nil, err
@@ -253,13 +242,11 @@ func (f *FTP) Login(ftpLogin FTPLogin) error {
 		return err
 	}
 
-	_, msg, err := f.Cmd(LoginSuccessful, "PASS %s", ftpLogin.Password)
+	_, _, err = f.Cmd(LoginSuccessful, "PASS %s", ftpLogin.Password)
 
 	if err != nil {
 		return err
 	}
-
-	fmt.Println(msg)
 
 	return nil
 }
