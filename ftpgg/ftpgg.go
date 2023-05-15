@@ -1,13 +1,13 @@
 package ftpgg
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"net"
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const (
@@ -16,6 +16,21 @@ const (
 	LoginSuccessful 		 = "230"
 	LoginIncorrect 			 = "530"
 )
+
+type EntryType int
+
+const ( 
+	RegularFile EntryType = iota
+	Directory 
+	Link
+)
+
+type Entry struct {
+	Type		EntryType
+	Name 		string
+	Date 		time.Time
+	Permissions string
+}
 
 var ( 
 	List = []byte("LIST\r\n")
@@ -181,7 +196,7 @@ func (f *FTP) Pwd() (string, error) {
 	return string(f.controlBuf[:n-2]), nil
 }
 
-func (f *FTP) List() ([]string, error) {
+func (f *FTP) List() ([]Entry, error) {
 
 	port, err := f.enterPassiveMode()
 
@@ -209,32 +224,42 @@ func (f *FTP) List() ([]string, error) {
 		return nil, err
 	}
 
-	dirs := make(chan string, 1)
-
-	defer close(dirs)
-
-	go func() {
-
-		if err != nil {
-			dirs <- ""
-			return
-		}
-
-		n, err := dataConn.Read(f.dataBuf) 
-
-		if err != nil {
-			dirs <- "" 
-			return 
-		}
-
-		dirs <- string(f.dataBuf[:n])
-	}()
-
-	for d := range dirs {
-		return strings.Split(d, "\r\n"), nil
+	if err != nil {
+		return nil, err
 	}
 
-	return nil, errors.New("failed to get directory listing")
+	n, err := dataConn.Read(f.dataBuf) 
+
+	if err != nil {
+		return nil, err
+	}
+
+	dirs := strings.Split(strings.TrimRight(string(f.dataBuf[:n]), "\r\n"), "\r\n")
+
+
+
+	var entries []Entry
+
+	for _, d := range dirs {
+		var entryType = RegularFile
+		
+		if d[0] == 'd' {
+			entryType = Directory
+		} else if d[0] == 'l' {
+			entryType = Link
+		}
+
+		entry := strings.Fields(d)
+		date, _ := ParseDate(strings.Join([]string{entry[5],entry[6],entry[7]}, " "))
+		entries = append(entries, Entry{
+			Type: entryType,
+			Name: entry[len(entry) - 1],
+			Permissions: entry[0],
+			Date: date,
+		})
+	}
+
+	return entries, nil
 }
 
 func (f *FTP) Login(ftpLogin FTPLogin) (string, error) {

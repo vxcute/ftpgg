@@ -1,13 +1,30 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"goftp/ftpgg"
-	"io"
 	"log"
-	"os"
+	"time"
 )
+
+type EntryType int
+
+const ( 
+	RegularFile EntryType = iota
+	Directory 
+	Link
+)
+
+type Entry struct {
+	Name 		string
+	Date 		time.Time
+	Permissions string
+}
+
+func ParseDate(d string) (time.Time, error) {
+	layout := "Jan 2 15:04"
+	return time.Parse(layout, d)
+}
 
 func main() {	
 
@@ -36,32 +53,6 @@ func main() {
 	}
 
 	for _, d := range dirs {
-		fmt.Println(d)
-	}
-
-	pwd, err := ftp.Pwd() 
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Println(pwd)
-
-	file, err := ftp.Download("file.txt")
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	f, err := os.Create("file.txt") 
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	defer f.Close()
-
-	if _, err := io.Copy(f, bytes.NewReader(file)); err != nil {
-		log.Fatal(err)
+		fmt.Printf("%d - %s - %s - %s\n", d.Type, d.Name, d.Date.String(), d.Permissions)
 	}
 }
