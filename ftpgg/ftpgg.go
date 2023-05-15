@@ -3,18 +3,31 @@ package ftpgg
 import (
 	"fmt"
 	"io"
-	"net"
+	"net/textproto"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
 
+const ( 
+	Protocol 	= "tcp"
+	DefaultPort = "21"
+)
+
 const (
-	ServiceReadyForNewUser   = "220"
-	UserNameOkayNeedPassword = "331"
-	LoginSuccessful 		 = "230"
-	LoginIncorrect 			 = "530"
+	ServiceReadyForNewUser	     = 220
+	UserNameOkayNeedPassword  	 = 331
+	LoginSuccessful 			 = 230
+	LoginIncorrect 			 	 = 530
+	EnteringExtendedPassiveMode  = 229
+	HereComesTheDirectoryListing = 150
+	DirectorySendOk				 = 226
+	CurrentDirectoryOk			 = 257
+	SwitchingToBinaryMode 		 = 200
+	FileSizeSent				 = 213
+	OpeningFileInBinaryMode 	 = 150
+	FileTransferComplete		 = 226
 )
 
 type EntryType int
@@ -32,17 +45,20 @@ type Entry struct {
 	Permissions string
 }
 
-var ( 
-	List = []byte("LIST\r\n")
-	Pwd  = []byte("PWD\r\n")
-	Espv = []byte("EPSV\r\n")
+const ( 
+	List 		= "LIST"
+	Pwd  		= "PWD"
+	Espv 		= "EPSV"
+	BinaryType  = "TYPE I" 
+	Size 		= "SIZE %s"
+	Retr 		= "RETR %s"
 )
 
 type FTP struct {
-	addr string
-	conn net.Conn
-	controlBuf []byte
-	dataBuf    []byte
+	serverName string
+	addr 	   string
+	conn 	   *textproto.Conn
+	dataConn   *textproto.Conn
 }
 
 type FTPLogin struct {
@@ -53,84 +69,78 @@ type FTPLogin struct {
 func NewFTP(addr string) *FTP {
 	return &FTP{ 
 		addr: 		addr,
-		controlBuf: make([]byte, 255),
-		dataBuf: 	make([]byte, 2048),
 	}
 }
 
-func (f *FTP) Connect() (string, error) {
+func (f *FTP) Cmd(expected int, format string, args ...any) (int, string, error) {
+	_, err := f.conn.Cmd(format, args...)
+	if err != nil {
+		return 0, "", err
+	}
+	return f.conn.ReadResponse(expected)
+}
+
+func (f *FTP) DataCmd(expected int, format string, args ...any) (int, string, error) {
+	_, err := f.dataConn.Cmd(format, args...)
+	if err != nil {
+		return 0, "", err
+	}
+	return f.conn.ReadResponse(expected)
+}
+
+func (f *FTP) Connect() error {
 
 	var err error 
 
-	f.conn, err = net.Dial("tcp", f.addr+"21")
+	f.conn, err = textproto.Dial(Protocol, f.addr+DefaultPort)
 
 	if err != nil {
-		return "", err
+		return  err
 	}
 
-	n, err := f.conn.Read(f.controlBuf)
+	_, msg, err := f.conn.ReadResponse(ServiceReadyForNewUser)
 
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	return string(f.controlBuf[:n-2]), nil
+	f.serverName = msg
+
+	fmt.Println(msg)
+
+	return nil
 }
 
 func (f *FTP) enterPassiveMode() (string, error) {
 
-	_, err := f.conn.Write(Espv)
+	_, msg, err := f.Cmd(EnteringExtendedPassiveMode, Espv)
 
 	if err != nil {
 		return "", err
 	}
-
-	n, err := f.conn.Read(f.controlBuf)
-
-	if err != nil {
-		return "", err
-	}
-
-	resp := string(f.controlBuf[3:n])
 
 	rgx := regexp.MustCompile("[0-9]+")
 
-	return rgx.FindString(resp), nil
+	return rgx.FindString(msg), nil
 }
 
 func (f *FTP) Download(fname string) ([]byte, error) {
 
-	_, err := f.conn.Write([]byte("TYPE I\r\n"))
+	code, msg, err := f.Cmd(SwitchingToBinaryMode, BinaryType)
+
+	fmt.Println(code, msg)
 
 	if err != nil {
 		return nil, err
 	}	
 
-	n, err := f.conn.Read(f.controlBuf)
+	_, fsize, err := f.Cmd(FileSizeSent, Size, fname)
 
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Println(string(f.controlBuf[:n]))
-
-	_, err = f.conn.Write([]byte(fmt.Sprintf("SIZE %s\r\n", fname)))
-
-	if err != nil {
-		return nil, err
-	}
-
-	n, err = f.conn.Read(f.controlBuf)
-
-	if err != nil {
-		return nil, err
-	}
-
-	fsize, err := strconv.Atoi(string(f.controlBuf[4:n-2]))
-
-	if err != nil {
-		return nil, err
-	}
+	nfsize, _ := strconv.Atoi(fsize)
 
 	port, err := f.enterPassiveMode()
 
@@ -138,65 +148,46 @@ func (f *FTP) Download(fname string) ([]byte, error) {
 		return nil, err
 	}
 
-	dataConn, err := net.Dial("tcp", f.addr+port) 
+	f.dataConn, err = textproto.Dial(Protocol, f.addr+port) 
 
 	if err != nil {
 		return nil, err
 	}
 
-	defer dataConn.Close()
+	defer f.dataConn.Close()
 
-	filebuf := make([]byte, fsize)
-
-	_, err = f.conn.Write([]byte(fmt.Sprintf("RETR %s\r\n", fname)))
+	_, _, err = f.Cmd(OpeningFileInBinaryMode, Retr, fname)
 
 	if err != nil {
 		return nil, err
 	}
 
-	n, err  = f.conn.Read(f.controlBuf)
+	filebuf := make([]byte, nfsize)
+
+	_, err = f.dataConn.R.Read(filebuf)
 
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Println(string(f.controlBuf[:n]))	
-
-	nb, err := dataConn.Read(filebuf) 
-		
-	if err != nil {
-		return nil, err
-	}
-
-	n, err = f.conn.Read(f.controlBuf)
-
-	if err != nil {
-		return nil, err
-	}
-
-	fmt.Println(string(f.controlBuf[:n]))
-
-	return filebuf[:nb], nil
+	return filebuf, nil
 }
+
 
 func (f *FTP) Pwd() (string, error) {
 
-	_, err := f.conn.Write(Pwd)
+	_, msg, err := f.Cmd(CurrentDirectoryOk, Pwd)
 
 	if err != nil {
 		return "", err
 	}
 
-	n, err := f.conn.Read(f.controlBuf)
-
-	if err != nil {
-		return "", err
-	}
-
-	return string(f.controlBuf[:n-2]), nil
+	return msg, nil
 }
 
 func (f *FTP) List() ([]Entry, error) {
+
+	var err error 
 
 	port, err := f.enterPassiveMode()
 
@@ -204,21 +195,15 @@ func (f *FTP) List() ([]Entry, error) {
 		return nil, err
 	}
 
-	dataConn, err := net.Dial("tcp", f.addr+port)
+	f.dataConn, err = textproto.Dial(Protocol, f.addr+port)
 
 	if err != nil {
 		return nil, err
 	}
 
-	defer dataConn.Close()
+	defer f.dataConn.Close()
 
-	_, err = f.conn.Write(List)
-
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = io.CopyN(io.Discard, f.conn, 63)
+	_, _, err = f.Cmd(HereComesTheDirectoryListing, List)
 
 	if err != nil {
 		return nil, err
@@ -227,30 +212,28 @@ func (f *FTP) List() ([]Entry, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	n, err := dataConn.Read(f.dataBuf) 
-
-	if err != nil {
-		return nil, err
-	}
-
-	dirs := strings.Split(strings.TrimRight(string(f.dataBuf[:n]), "\r\n"), "\r\n")
-
-
 
 	var entries []Entry
 
-	for _, d := range dirs {
+	for err != io.EOF {
+
+		msg, err := f.dataConn.ReadLine()
+
+		if err != nil {
+			break
+		}
+
 		var entryType = RegularFile
 		
-		if d[0] == 'd' {
+		if msg[0] == 'd' {
 			entryType = Directory
-		} else if d[0] == 'l' {
+		} else if msg[0] == 'l' {
 			entryType = Link
 		}
 
-		entry := strings.Fields(d)
+		entry := strings.Fields(msg)
 		date, _ := ParseDate(strings.Join([]string{entry[5],entry[6],entry[7]}, " "))
+		
 		entries = append(entries, Entry{
 			Type: entryType,
 			Name: entry[len(entry) - 1],
@@ -262,40 +245,21 @@ func (f *FTP) List() ([]Entry, error) {
 	return entries, nil
 }
 
-func (f *FTP) Login(ftpLogin FTPLogin) (string, error) {
+func (f *FTP) Login(ftpLogin FTPLogin) error {
 
-	userReq := "USER " + ftpLogin.Username + "\r\n"
-
-	_, err := f.conn.Write([]byte(userReq))
+	_, _, err := f.Cmd(UserNameOkayNeedPassword, "USER %s", ftpLogin.Username)
 
 	if err != nil {
-		return "", err
+		return err
 	}
 
-	n, err := f.conn.Read(f.controlBuf)
+	_, msg, err := f.Cmd(LoginSuccessful, "PASS %s", ftpLogin.Password)
 
 	if err != nil {
-		return "", nil
+		return err
 	}
 
-	if string(f.controlBuf[:3]) == UserNameOkayNeedPassword {	
+	fmt.Println(msg)
 
-		passReq := "PASS " + ftpLogin.Password + "\r\n"
-
-		_, err := f.conn.Write([]byte(passReq)) 
-
-		if err != nil {
-			return "", err
-		}
-
-		n, err := f.conn.Read(f.controlBuf)
-
-		if err != nil {
-			return "", err
-		}
-
-		return string(f.controlBuf[:n-2]), nil
-	} else {
-		return string(f.controlBuf[:n-2]), nil
-	}
+	return nil
 }

@@ -30,29 +30,19 @@ func main() {
 
 	ftp := ftpgg.NewFTP(":")
 
-	r, err := ftp.Connect()
-
-	if err != nil {
+	if err := ftp.Connect(); err != nil {
 		log.Fatal(err)
 	}
-
-	fmt.Println(r)
 	
-	r, err = ftp.Login(ftpgg.FTPLogin{Username: "ftpuser", Password: "pass"})
+ 	if err := ftp.Login(ftpgg.FTPLogin{Username: "ftpuser", Password: "pass"}); err != nil {
+		log.Fatal(err)
+	}
+
+	file, err := ftp.Download("file.txt") 
 
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	fmt.Println(r)
-
-	dirs, err := ftp.List()
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	for _, d := range dirs {
-		fmt.Printf("%d - %s - %s - %s\n", d.Type, d.Name, d.Date.String(), d.Permissions)
-	}
+	fmt.Print(string(file))
 }
