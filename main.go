@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"goftp/ftpgg"
 	"log"
 	"time"
@@ -38,11 +37,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	file, err := ftp.Download("file.txt") 
-
-	if err != nil {
+	if err := ftp.Stor("file.txt"); err != nil {
 		log.Fatal(err)
 	}
-
-	fmt.Print(string(file))
 }

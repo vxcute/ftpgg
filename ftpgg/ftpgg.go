@@ -1,8 +1,10 @@
 package ftpgg
 
 import (
+	"fmt"
 	"io"
 	"net/textproto"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
@@ -27,6 +29,8 @@ const (
 	FileSizeSent				 = 213
 	OpeningFileInBinaryMode 	 = 150
 	FileTransferComplete		 = 226
+	DirectoryChangedSuccessfully = 250
+	OkToSendData				 = 150
 )
 
 const ( 
@@ -42,6 +46,8 @@ const (
 	BinaryType  = "TYPE I" 
 	Size 		= "SIZE %s"
 	Retr 		= "RETR %s"
+	Cwd 		= "CWD %s"
+	Stor 		= "STOR %s"
 )
 
 type EntryType int
@@ -165,9 +171,70 @@ func (f *FTP) Download(fname string) ([]byte, error) {
 		return nil, err
 	}
 
+	_,_, err = f.conn.ReadResponse(FileTransferComplete)
+	
+	if err != nil {
+		return nil, err
+	}
+
 	return filebuf, nil
 }
 
+func (f *FTP) Cwd(path string) error {
+	_, msg, err := f.Cmd(DirectoryChangedSuccessfully, Cwd, path)
+	fmt.Println(msg)
+	return err
+} 
+
+func (f *FTP) Stor(path string) error {
+
+	port, err := f.enterPassiveMode()
+
+	if err != nil {
+		return err
+	}
+
+	f.dataConn, err = textproto.Dial("tcp", f.addr+port)
+
+	if err != nil {
+		return err
+	}
+
+	file, err := os.Open(path)
+
+	if err != nil {
+		return err
+	}
+
+	fstat, _ := file.Stat()
+
+	defer file.Close()
+
+	_, _, err = f.Cmd(OkToSendData, Stor, path)
+
+	if err != nil {
+		return err
+	}
+
+	uploaded := 0
+
+	for {
+		wr, _ := io.Copy(f.dataConn.W, file)
+		uploaded += int(wr)
+		if uploaded == int(fstat.Size()) {
+			f.dataConn.Close()
+			break
+		}
+	}
+
+	_, _, err = f.conn.ReadResponse(FileTransferComplete)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
 
 func (f *FTP) Pwd() (string, error) {
 
