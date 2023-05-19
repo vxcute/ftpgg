@@ -50,4 +50,8 @@ func main() {
 	if err := ftp.Cdup(); err != nil {
 		log.Fatal(err)
 	}
+
+	if err := ftp.Chmod("file.txt", "x"); err != nil {
+		log.Fatal(err)
+	}
 }

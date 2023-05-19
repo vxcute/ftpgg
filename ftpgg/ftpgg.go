@@ -1,7 +1,6 @@
 package ftpgg
 
 import (
-	"fmt"
 	"io"
 	"net/textproto"
 	"os"
