@@ -11,51 +11,56 @@ import (
 	"time"
 )
 
-const ( 
-	Protocol 	= "tcp"
+const (
+	Protocol    = "tcp"
 	DefaultPort = "21"
 )
 
 const (
-	ServiceReadyForNewUser	     = 220
-	UserNameOkayNeedPassword  	 = 331
-	LoginSuccessful 			 = 230
-	LoginIncorrect 			 	 = 530
+	ServiceReadyForNewUser       = 220
+	UserNameOkayNeedPassword     = 331
+	LoginSuccessful              = 230
+	LoginIncorrect               = 530
 	EnteringExtendedPassiveMode  = 229
 	HereComesTheDirectoryListing = 150
-	DirectorySendOk				 = 226
-	CurrentDirectoryOk			 = 257
-	SwitchingToBinaryMode 		 = 200
-	FileSizeSent				 = 213
-	OpeningFileInBinaryMode 	 = 150
-	FileTransferComplete		 = 226
+	DirectorySendOk              = 226
+	CurrentDirectoryOk           = 257
+	SwitchingToBinaryMode        = 200
+	FileSizeSent                 = 213
+	OpeningFileInBinaryMode      = 150
+	FileTransferComplete         = 226
 	DirectoryChangedSuccessfully = 250
-	OkToSendData				 = 150
+	OkToSendData                 = 150
+	Goodbye                      = 221
+	SiteChmodCommandOk           = 200
 )
 
-const ( 
+const (
 	RegularFile EntryType = iota
-	Directory 
+	Directory
 	Link
 )
 
-const ( 
-	List 		= "LIST"
-	Pwd  		= "PWD"
-	Espv 		= "EPSV"
-	BinaryType  = "TYPE I" 
-	Size 		= "SIZE %s"
-	Retr 		= "RETR %s"
-	Cwd 		= "CWD %s"
-	Stor 		= "STOR %s"
+const (
+	List       = "LIST"
+	Pwd        = "PWD"
+	Espv       = "EPSV"
+	BinaryType = "TYPE I"
+	Size       = "SIZE %s"
+	Retr       = "RETR %s"
+	Cwd        = "CWD %s"
+	Stor       = "STOR %s"
+	Quit       = "QUIT"
+	Chmod      = "SITE chmod %s %s"
+	Cdup       = "CDUP"
 )
 
 type EntryType int
 
 type FTP struct {
 	serverName string
-	addr 	   string
-	conn 	   *textproto.Conn
+	addr       string
+	conn       *textproto.Conn
 	dataConn   *textproto.Conn
 }
 
@@ -65,15 +70,15 @@ type FTPLogin struct {
 }
 
 type Entry struct {
-	Type		EntryType
-	Name 		string
-	Date 		time.Time
+	Type        EntryType
+	Name        string
+	Date        time.Time
 	Permissions string
 }
 
 func NewFTP(addr string) *FTP {
-	return &FTP{ 
-		addr: 		addr,
+	return &FTP{
+		addr: addr,
 	}
 }
 
@@ -95,12 +100,12 @@ func (f *FTP) DataCmd(expected int, format string, args ...any) (int, string, er
 
 func (f *FTP) Connect() error {
 
-	var err error 
+	var err error
 
 	f.conn, err = textproto.Dial(Protocol, f.addr+DefaultPort)
 
 	if err != nil {
-		return  err
+		return err
 	}
 
 	_, msg, err := f.conn.ReadResponse(ServiceReadyForNewUser)
@@ -133,7 +138,7 @@ func (f *FTP) Download(fname string) ([]byte, error) {
 
 	if err != nil {
 		return nil, err
-	}	
+	}
 
 	_, fsize, err := f.Cmd(FileSizeSent, Size, fname)
 
@@ -149,7 +154,7 @@ func (f *FTP) Download(fname string) ([]byte, error) {
 		return nil, err
 	}
 
-	f.dataConn, err = textproto.Dial(Protocol, f.addr+port) 
+	f.dataConn, err = textproto.Dial(Protocol, f.addr+port)
 
 	if err != nil {
 		return nil, err
@@ -171,8 +176,8 @@ func (f *FTP) Download(fname string) ([]byte, error) {
 		return nil, err
 	}
 
-	_,_, err = f.conn.ReadResponse(FileTransferComplete)
-	
+	_, _, err = f.conn.ReadResponse(FileTransferComplete)
+
 	if err != nil {
 		return nil, err
 	}
@@ -180,11 +185,15 @@ func (f *FTP) Download(fname string) ([]byte, error) {
 	return filebuf, nil
 }
 
-func (f *FTP) Cwd(path string) error {
-	_, msg, err := f.Cmd(DirectoryChangedSuccessfully, Cwd, path)
-	fmt.Println(msg)
+func (f *FTP) Cdup() error {
+	_, _, err := f.Cmd(DirectoryChangedSuccessfully, Cdup)
 	return err
-} 
+}
+
+func (f *FTP) Cwd(path string) error {
+	_, _, err := f.Cmd(DirectoryChangedSuccessfully, Cwd, path)
+	return err
+}
 
 func (f *FTP) Stor(path string) error {
 
@@ -247,11 +256,21 @@ func (f *FTP) Pwd() (string, error) {
 	return msg, nil
 }
 
+func (f *FTP) Chmod(path string, mod string) error {
+	_, _, err := f.Cmd(SiteChmodCommandOk, Chmod, mod, path)
+	return err
+}
+
+func (f *FTP) Quit() error {
+	_, _, err := f.Cmd(Goodbye, Quit)
+	return err
+}
+
 func (f *FTP) List() ([]Entry, error) {
 
 	port, err := f.enterPassiveMode()
 
-	if err != nil  {
+	if err != nil {
 		return nil, err
 	}
 
@@ -280,7 +299,7 @@ func (f *FTP) List() ([]Entry, error) {
 		}
 
 		var entryType = RegularFile
-		
+
 		if msg[0] == 'd' {
 			entryType = Directory
 		} else if msg[0] == 'l' {
@@ -288,13 +307,13 @@ func (f *FTP) List() ([]Entry, error) {
 		}
 
 		entry := strings.Fields(msg)
-		date, _ := ParseDate(strings.Join([]string{entry[5],entry[6],entry[7]}, " "))
-		
+		date, _ := ParseDate(strings.Join([]string{entry[5], entry[6], entry[7]}, " "))
+
 		entries = append(entries, Entry{
-			Type: entryType,
-			Name: entry[len(entry) - 1],
+			Type:        entryType,
+			Name:        entry[len(entry)-1],
 			Permissions: entry[0],
-			Date: date,
+			Date:        date,
 		})
 	}
 

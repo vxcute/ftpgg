@@ -8,15 +8,15 @@ import (
 
 type EntryType int
 
-const ( 
+const (
 	RegularFile EntryType = iota
-	Directory 
+	Directory
 	Link
 )
 
 type Entry struct {
-	Name 		string
-	Date 		time.Time
+	Name        string
+	Date        time.Time
 	Permissions string
 }
 
@@ -25,19 +25,29 @@ func ParseDate(d string) (time.Time, error) {
 	return time.Parse(layout, d)
 }
 
-func main() {	
+func main() {
 
 	ftp := ftpgg.NewFTP(":")
 
 	if err := ftp.Connect(); err != nil {
 		log.Fatal(err)
 	}
-	
- 	if err := ftp.Login(ftpgg.FTPLogin{Username: "ftpuser", Password: "pass"}); err != nil {
+
+	if err := ftp.Login(ftpgg.FTPLogin{Username: "ftpuser", Password: "pass"}); err != nil {
 		log.Fatal(err)
 	}
 
-	if err := ftp.Stor("file.txt"); err != nil {
+	defer func() {
+		if err := ftp.Quit(); err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	if err := ftp.Cwd("mydir"); err != nil {
+		log.Fatal(err)
+	}
+
+	if err := ftp.Cdup(); err != nil {
 		log.Fatal(err)
 	}
 }
